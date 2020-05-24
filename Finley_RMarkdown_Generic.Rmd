@@ -1,0 +1,60 @@
+---
+title: "TU R Group Week 1 Regression"
+author: "Ann Marie Finley"
+date: "`r format(Sys.Date())`"
+output:
+   html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    css: style.css
+---
+
+```{r setup, include=FALSE }
+knitr::opts_chunk$set(fig.width=6, fig.height=4, fig.path='Figs/', echo=TRUE, tidy=TRUE, message=F, warning=F, cache=T)
+```
+
+
+```{r, echo=F}
+library(tidyverse)
+library(reshape2)
+library(dendextend)
+library(corrplot)
+library(tibble)
+jamie.theme <- theme_bw() + theme(axis.line = element_line(colour = "black"), panel.grid.minor = element_blank(), panel.grid.major = element_blank(), panel.border = element_blank(), panel.background = element_blank(), legend.title= element_blank())
+```
+
+# Read in data
+Look at structure, column names, headers and first ten rows
+```{r}
+wone <- read.csv("cursing2.csv" , header = T)
+str(wone)
+names(wone)
+head(wone, n=10)
+```
+
+# Basic Scatterplot 
+Length x Tabooness
+```{r}
+plot(wone$Nlett ~ wone$Taboo, col = "navy")
+```
+
+# Fancy Scatterplot
+Loess Function
+```{r, fig.height=6, fig.width=8}
+ggplot(wone, aes(Taboo, Nlett)) + geom_point(shape = 2, size = 1, color = "navy", 
+    alpha = 0.7) + stat_smooth(method = loess, color = "pink") + xlab("Taboo") + 
+    ylab("Nlett") + scale_x_continuous(breaks = seq(0, 7, by = 1)) + 
+    scale_y_continuous(breaks = seq(0, 7, by = 1)) + jamie.theme
+```
+
+# Regression 
+Do number of letters and valence predict word tabooness?
+```{r}
+reg1 <- lm(wone$Taboo ~ wone$Nlett + wone$Valence)
+summary(reg1)
+```
+
+Tabooness = 3.33 + Nlett(-0.02) + Valence(-0.31)
+
+Number of letters was not a significant predictor of word tabooness. For every one unit increase in valence, there is a 0.31 decrease in word tabooness.
