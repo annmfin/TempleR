@@ -1,0 +1,72 @@
+---
+title: "Week 3 TU R Group"
+author: "Ann Marie Finley"
+date: "`r format(Sys.Date())`"
+output:
+   html_document:
+    toc: true
+    toc_depth: 2
+    number_sections: true
+    css: style.css
+---
+
+```{r setup, include=FALSE, cache=F}
+knitr::opts_chunk$set(fig.width=6, fig.height=4, fig.path='Figs/', echo=TRUE, tidy=TRUE, message=F, warning=F, cache=T)
+```
+
+# Library
+```{r}
+library(tidyverse)
+library(reshape2)
+library(stats)
+library(moments)
+library(car)
+library(psych)
+library(outliers)
+library(pastecs)
+```
+
+# Get data read in
+Now I'm going to read in my data
+```{r}
+Lancaster <- read.csv("LancasterShort.csv", header = T)
+str(Lancaster)
+```
+
+What are the column headers?
+```{r}
+names(dat)
+```
+
+# Data Visualization coarse
+```{r}
+plot(dat$Taboo ~ dat$Valence, col="blue")
+```
+
+fit a regression line through that
+```{r, fig.height=8}
+plot(dat$Valence ~ dat$Taboo, col="blue")
+abline(lm(dat$Valence ~ dat$Taboo), col = "black")
+```
+
+# Data ggplot2 a little fancier
+create fancier scatterplot 
+-- on JR's screen
+
+# Go crazy don't check assumptions run Ordinary Lease Squares Regression (OLS)
+```{r}
+curse.mod <- lm(dat$Taboo ~ dat$Valence + dat$Arousal)
+## running linear model predicting tabooness as a function of valence and arousal
+summary(curse.mod)
+```
+
+# Hide code block from knit using echo
+```{r, echo=FALSE}
+curse.mod <- lm(dat$Taboo ~ dat$Valence + dat$Arousal)
+## running linear model predicting tabooness as a function of valence and arousal
+summary(curse.mod)
+
+```
+
+
+

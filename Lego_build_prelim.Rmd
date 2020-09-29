@@ -1,0 +1,351 @@
+---
+title: 'LEGO Build Preliminary Analysis'
+author: "Sharice Clough"
+date: "`r format(Sys.Date())`"
+output:
+  html_document:
+    number_sections: yes
+    toc: true
+    toc_depth: 2
+    toc_float:
+      collapsed: false
+      smooth_scroll: false
+      number_sections: false
+    df_print: paged
+  
+---
+
+```{r setup, include=FALSE, cache=F}
+chooseCRANmirror(graphics=FALSE, ind=1)
+knitr::opts_chunk$set(fig.width=6, fig.height=4, fig.path='Figs/', echo=TRUE, tidy=TRUE, message=F, warning=F, cache=F)
+```
+
+```{css, echo = FALSE}
+/* Whole document: */
+body{
+  font-family: avenir;
+  font-size: 14pt;
+  color: black;
+}
+
+/* Headers */
+h1 {
+  font-size: 22pt;
+  color: #ed2187;
+}
+h2 { 
+  font-size: 20pt;
+  color: black;
+}
+h3 { 
+  font-size: 18pt;
+  color: #666699;
+}
+
+/* Code Chunks */
+pre {
+  max-height: 350px;
+  background-color: #fcf9ed;
+  overflow-y: auto;
+}
+pre[class] {
+  max-height: 250px;
+}
+
+/* TOC */
+.list-group-item.active:hover {
+    z-index: 1;
+    color: #ed2187;
+    background-color: #e3ca27;
+    border-color: #e3ca27;
+}
+.list-group-item.active {
+    z-index: 2;
+    color: black;
+    background-color: #e3ca27;
+    border-color: #e3ca27;
+    }
+```
+
+
+# Load Libraries
+```{r}
+library(tidyverse) #ggplot
+library(lme4) #fit linear and generalized linear mixed-effect models
+library(lmerTest) #tests linear mixed-effect models
+library(jtools) #calculate ICC
+library(praise) #get compliments from R
+library(png) #read and write PNG images
+library(brickr) #convert images into mosaics
+library(rgl) #build 3D LEGO models
+library(RCurl) #download URL
+```
+
+# Read in Data
+```{r}
+dat <- read.csv(file = "LEGO_Build_Temple.csv")
+```
+
+View data.
+```{r}
+dat
+```
+# Data Overview
+In this study, 3 people with amnesia and 9 healthy comparison participants (3 individually matched to each person with amnesia) each directed a research assistant on how to build 4 LEGO models. For two of the models (house, dog), the participant and experimenter were separated by a short barrier. The participant could see the experimenter's face but not the LEGO pieces. For the other two models (deer, dinosaur), the participant and experimenter were separated by a tall barrier that occluded all visual access. 
+
+
+
+![Figure 1. Experimental setup in the short barrier phase. Participants (directors) instructed a research assistant (builder) on how to build a LEGO model. In this phase, participants could see the listener but not the LEGOs or building progress.](https://user-images.githubusercontent.com/65694310/94215682-0548c180-fea3-11ea-9177-28cfc4dee48c.png)
+
+
+
+## Dependent variables
+**WordCount**: The number of total words produced by both participant (the director) and the builder to complete each Lego model.  
+**GestureRate**: Average number of gestures per word produced by director during build.
+**Accuracy**: Binary variable for whether model was correct at end of build; 0 = incorrect, 1 = correct.  
+**BuildTime**: The number of seconds it took to build each model from start to finish.  
+ 
+## Predictors
+**Group**: Amnesia vs. Healthy Comparison Participants  
+**Barrier**: short vs. tall
+
+## Random effects
+**SubjectID**  
+**Object**: LEGO model (house, dog, deer, dino)
+
+![Figure 2. LEGO models. Directors instructed builders on how to build the house and dog model in the short barrier condition and the deer and dino model in the tall barrier condition.](https://user-images.githubusercontent.com/65694310/94215691-0974df00-fea3-11ea-88e0-066d14cf4340.png)
+
+## Coding
+Dummy coding.
+Creating a numeric group variable with "Comparison" as reference group (0).
+```{r}
+dat$GroupNumeric=as.numeric(dat$Group)
+dat$GroupNumeric[dat$GroupNumeric == 1] <- 1 
+dat$GroupNumeric[dat$GroupNumeric == 2] <- 0 
+with(dat, tapply(GroupNumeric, list(Group), mean))
+```
+
+Effects coding.
+```{r}
+contrasts(dat$Barrier) = cbind(short_vs_tall=c(-.5,.5))
+contrasts(dat$Barrier)
+```
+
+
+# Word Count
+## Data visualization
+```{r}
+ggplot(dat,
+       aes("", WordCount, fill = Barrier)) +
+  stat_summary(fun = "mean", geom = "bar", position = "dodge", alpha = 0.9) +
+  theme_classic (base_size = 18) +
+  xlab("") +
+  ylab("Word Count") +
+  facet_wrap(~Group) +
+  scale_fill_manual (values = c("violetred2", "gold2")) +
+  stat_summary(fun.data = mean_se,
+               geom = "errorbar", position = position_dodge(.9),
+               size = .25, width = .5) 
+```
+
+![This LEGO plot was made possible thanks to Ryan Timpe and the ggbrickr package. This package is not yet available to the public, but keep an eye out for its release!](https://user-images.githubusercontent.com/65694310/94280008-84291300-ff12-11ea-8e05-a47ce1633dec.png){width=75%}
+
+
+## Models
+Random intercept model.
+```{r}
+WC.glmer.0 <- glmer(WordCount ~ 1 + (1|SubjectID) + (1|Object), data = dat, family = poisson) # (1|___) is a random intercept
+  summary(WC.glmer.0)
+```
+
+Calculate ICC for cluster-level variables:
+8% of the variance in word count is due to between subjects differences, and only 1% of the variance is due to LEGO Object.
+```{r}
+summ(WC.glmer.0) #from "jtools" package
+```
+
+Random intercept with fixed effects for Group and Barrier.
+```{r}
+WC.glmer.1 <- glmer(WordCount ~ GroupNumeric*Barrier + (1|SubjectID) + (1|Object), data = dat, family = poisson) # GroupnNumeric*Barrier gives you the main effects of group and barrier height as well as their interaction
+summary(WC.glmer.1)
+```
+
+Random intercept with random slopes for the effect of Barrier within SubjectID.
+```{r}
+WC.glmer.2 <- glmer(WordCount ~ GroupNumeric*Barrier + (1 + Barrier|SubjectID) + (1|Object), data = dat, family = poisson) # (Barrier|SubjectID) is a random slope for the effect of barrier height by SubjectID cluster
+summary(WC.glmer.2)
+```
+
+Random intercept with random slopes for the effect of Barrier within SubjectID and LEGO Objects.
+```{r}
+WC.glmer.3 <- glmer(WordCount ~ GroupNumeric*Barrier + (1 + Barrier|SubjectID) + (1 + Barrier|Object), data = dat, family = poisson) #adding a random slope for (Barrier|Object) allows the effect of barrier height to vary by LEGO Model
+summary(WC.glmer.3)
+```
+
+Test to see if the more complicated models are better.  
+WC.glmer.2 seems to be the winner.
+```{r paged.print=FALSE}
+anova(WC.glmer.1,WC.glmer.2, WC.glmer.3) 
+```
+
+Multi-Level Modeling is hard. We've earned a compliment.
+```{r}
+praise()
+```
+
+# Gesture Rate
+
+## Data visualization
+```{r, eval = FALSE}
+ggplot(dat,
+         aes("", GestureRate, fill = Barrier)) +
+    stat_summary(fun = "mean", geom = "bar", position = "dodge", alpha = 0.9, na.rm = TRUE) +
+    theme_classic(base_size = 18) +
+    xlab("") +
+    ylab("Gesture Rate") +
+    facet_wrap(~Group) +
+    scale_fill_manual (values = c("violetred2", "gold2")) +
+    stat_summary(fun.data = mean_se,
+                 geom = "errorbar", position = position_dodge(.9),
+                 size = .25, width = .5) #This code is for a standard bar plot, not the LEGO plot.
+```
+
+![](https://user-images.githubusercontent.com/65694310/94280013-85f2d680-ff12-11ea-8706-0a4a44899395.png){width=75%}
+
+Line graph Looking at average gesture rate in short vs. tall barrier condition by Subject ID.
+```{r}
+ggplot(data = dat, aes(x = Barrier, y = GestureRate, group = SubjectID, color = SubjectID)) + 
+  stat_summary(fun = "mean", geom = "point") +
+  stat_summary(fun = "mean", geom = "line") +
+  facet_wrap(~Group) +
+  theme_classic()
+```
+
+
+## Models
+Random intercept model.
+```{r}
+GR.lmer.0 <- lmer(GestureRate ~ 1 + (1|SubjectID) + (1|Object), data = dat)
+summary(GR.lmer.0)
+```
+
+Calculate ICC for cluster-level variables: 49% of the variance in GestureRate is due to between subjects differences, and 18% of the variance is due to LEGO Object.
+```{r}
+summ(GR.lmer.0)
+```
+
+
+Random intercept with fixed effects for Group and Barrier.
+```{r}
+GR.lmer.1 <- lmer(GestureRate ~ GroupNumeric*Barrier + (1|SubjectID) + (1|Object), data = dat)
+summary(GR.lmer.1)
+```
+
+Random intercept with random slopes for the effect of Barrier within SubjectID.
+```{r}
+GR.lmer.2 <- lmer(GestureRate ~ GroupNumeric*Barrier + (1 + Barrier|SubjectID) + (1|Object), data = dat)
+summary(GR.lmer.2)
+```
+
+Random intercept with random slopes for the effect of Barrier within SubjectID and LEGO Objects.
+Boundary (singular) fit: see ?isSingular.
+```{r}
+GR.lmer.3 <- lmer(GestureRate ~ GroupNumeric*Barrier + (1 + Barrier|SubjectID) + (1 + Barrier|Object), data = dat)
+summary(GR.lmer.3)
+```
+
+Test to see if the more complicated models are better. 
+Use GR.glmer.2 seems to be the winner
+```{r paged.print=FALSE}
+anova(GR.lmer.1, GR.lmer.2, GR.lmer.3)
+```
+
+Time for a pat on the back!
+```{r}
+praise()
+```
+
+# Accuracy
+
+## Data visualization
+```{r, eval = FALSE}
+ggplot(dat,
+         aes("", Accuracy, fill = Barrier)) +
+    stat_summary(fun = "mean", geom = "bar", position = "dodge", alpha = 0.9) +
+    theme_classic (base_size = 18) +
+    xlab("") +
+    ylab("Accuracy") +
+    facet_wrap(~Group) +
+    scale_fill_manual (values = c("violetred2", "gold2")) +
+    stat_summary(fun.data = mean_se,
+                 geom = "errorbar", position = position_dodge(.9),
+                 size = .25, width = .5) #This code is for a standard bar plot, not the LEGO plot.
+```
+
+![](https://user-images.githubusercontent.com/65694310/94279999-825f4f80-ff12-11ea-9103-baba49dbfb13.png){width=75%}
+
+
+## Models
+Random intercept model.
+```{r}
+ACC.glmer.0 <- glmer(Accuracy ~ 1 + (1|SubjectID) + (1|Object), data = dat, family = "binomial")
+summary(ACC.glmer.0)
+```
+
+Calculate ICC for cluster-level variables: 25% of the variance in Accuracy is due to between subjects differences, and 0% of the variance is due to LEGO Object. We will remove the random slope by object.
+```{r}
+summ(ACC.glmer.0)
+```
+
+
+Random intercept with fixed predictors for Group and Barrier  
+Boundary (singular) fit: see ?isSingular.
+This model likely has too few points (only 48) for a binary variable. Based on the plot, we can test to see if there is a difference by group only and remove the barrier effect.
+```{r}
+ACC.glmer.1 <- glmer(Accuracy ~ GroupNumeric*Barrier + (1|SubjectID), data = dat, family = "binomial")
+summary(ACC.glmer.1)
+```
+
+Random intercept with fixed effect of Group.
+boundary (singular) fit: see ?isSingular - There are still fit issues...
+```{r}
+ACC.glmer.2 <- glmer(Accuracy ~ GroupNumeric + (1|SubjectID), data = dat, family = "binomial")
+summary(ACC.glmer.2)
+```
+
+These models aren't converging, but we tried so here's a compliment anyway!
+```{r}
+praise()
+```
+
+# Build Your Own LEGO Model
+
+![](https://user-images.githubusercontent.com/65694310/94215695-0d086600-fea3-11ea-875f-4ca4db313d77.png){width=25%}
+```{r}
+myurl <- "https://user-images.githubusercontent.com/65694310/94215695-0d086600-fea3-11ea-875f-4ca4db313d77.png" #read in image from url
+LEGO_seahorse = readPNG(getURLContent(myurl)) %>%
+  image_to_mosaic(img_size = c(50, 75)) #specifies (width, height) of mosaic
+```
+
+Build mosaic from image.
+```{r, eval = FALSE}
+LEGO_seahorse %>%
+  build_mosaic()
+```
+![](https://user-images.githubusercontent.com/65694310/94216232-805ea780-fea4-11ea-950e-80d2567d7c4c.png){width=50%}
+
+Build 3D LEGO model from mosaic.
+```{r, eval = FALSE}
+
+LEGO_seahorse %>%
+  bricks_from_mosaic(highest_el = "dark", mosaic_height = 12) %>%
+  build_bricks() # You will need to install XQuartz to render 3D objects
+```
+![](https://user-images.githubusercontent.com/65694310/94215700-10035680-fea3-11ea-8695-d06700317959.png){width=50%}
+
+Find out how many pieces of what size and color you would need to build model in real life.
+```{r}
+LEGO_seahorse %>% build_pieces()
+```
+
+

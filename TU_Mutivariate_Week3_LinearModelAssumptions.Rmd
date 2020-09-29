@@ -1,0 +1,180 @@
+---
+title: "Assumptions of Linear Models & Data Transformations"
+author: "Jamie Reilly, Ph.D."
+date: "`r format(Sys.Date())`"
+output:
+   html_document:
+    toc: true
+    toc_depth: 3
+    number_sections: true
+    css: style.css
+---
+
+```{r setup, include=FALSE, cache=F}
+knitr::opts_chunk$set(fig.width=6, fig.height=4, fig.path='Figs/', echo=TRUE, tidy=TRUE, message=F, warning=F, cache=T)
+```
+
+Libraries
+```{r echo=T, message=F}
+library(reshape2)
+library(tidyverse)
+library(stats)
+library(pastecs)
+library(moments) #gives skewness and kurtosis
+library(car)
+library(psych)
+library(outliers)
+jamie.theme <- theme_bw() + theme(axis.line = element_line(colour = "black"), panel.grid.minor = element_blank(), panel.grid.major = element_blank(), panel.border = element_blank(), panel.background = element_blank(), legend.title= element_blank())  #custom graphics theme for ggplot2
+```
+
+We'll first read in the data. These data reflect an abbreviated version of the Lancaster Sensorimotor norms by Lynott et al 2019. The Lancaster norms reflect subjective crowdsourced ratings of the salience of many English words on vision, audition, olfaction, etc.
+
+```{r}
+Lancaster <- read.csv("LancasterShort.csv", header=T)
+str(Lancaster)
+```
+
+Wrangle the dataframe from wide to long form Let's melt the dataframe so we can do a bunch of stats at once by factor. We will only use a few columns.
+```{r}
+short <- Lancaster %>% select(1:7)
+long <- short %>% melt(id.vars=1, measure.vars=2:7, variable.name="modality", value.name="rating")
+str(long)
+```
+
+Let's generate some descriptive stats by level of a grouping variable
+```{r}
+describeBy(long$rating, long$modality)
+```
+
+
+# Assumptions
+Parametric model assumptions (see Field et al, Chapter 5) </br>
+1) Normally distributed </br>
+2) Homogeneity of variance across groups </br>
+3) Interval or ratio scale </br>
+4) Independence </br>
+
+Let's take these one at a time using the Lancaster norms as a test case </br>
+
+## Normality
+### Histogram of visual salience across English words
+Let's first visualize the distribution using a histogram and overlay a normal curve over the distribution.  To do this, we need to plot density and not frequency. Let's overlay a normal curve and take a guess.  That looks pretty darn normal to me. 
+
+```{r}
+ggplot(Lancaster, aes(x = Visual)) + geom_histogram(aes(y = ..density..), 
+    colour = "black", fill = "goldenrod2", binwidth = 0.10) + xlab("Likert Rating") + 
+    ylab("Density") + jamie.theme + ggtitle("Visual Salience across English Words") + stat_function(fun = dnorm, args = list(mean = mean(Lancaster$Visual), sd= sd(Lancaster$Visual)), color="red", size=1)
+```
+ 
+### QQplot
+Let's run a qqplot on all that visual data
+```{r, fig.height=4, fig.width=4}
+qplot(sample=Lancaster$Visual, stat="qq")
+```
+
+### Normality statistics (Shapiro Wilk)
+Shapiro Wilk Test -- null hypothesis is no difference (i.e., normal). It won't work on large samples (>5k) but let's try it out on a smaller distribution we know to be normal
+```{r}
+bell <- rnorm(5000, 5, 1)  #here's a fake dataset, sampling 5000 random normally distributed numbers with a mean of 5 and an sd=1
+shapiro.test(bell)
+```
+
+### Histograms of multiple variables at once
+We will use the facet wrap function to do this. Use the long form dataframe
+
+```{r, fig.width=8, fig.height=6}
+all <- ggplot(long, aes(x = rating), fill=modality) + geom_histogram(aes(y = ..count..), 
+   binwidth = 0.10, color="black", fill="goldenrod2") + xlab("Likert Rating") + 
+    ylab("Count") + jamie.theme + ggtitle("Histograms of Modalities across English Words") +  facet_wrap(~modality, nrow=2)
+all
+```
+
+## Equal Variance
+### Boxplot for coarse inspection
+All levels of the factor variables should have equal variance </br>
+First let's coarsely eyeball the variance of the groups by each sensory modality
+```{r, fig.height=6, fig.width=6}
+boxplot(long$rating ~ long$modality, col = "red")
+```
+
+### Levene Test
+Null hypothesis is the no difference hypothesis
+```{r}
+leveneTest(long$rating, long$modality, center=mean)
+```
+
+## Interval or ratio scale
+Self explanatory
+
+## Independence
+Self-explanatory. Each word is its own independent observation in the Lancaster normns. There is no temporal autocorrelation.
+
+# Outliers & Outlier detection
+Let's create a univariate distribution -- shoe sizes. 1.5*IQR is a univariate outlier using the boxplot method. the mean method is >2sds
+```{r}
+set.seed(129)
+shoes <-  data.frame("sizes"=c(sample(12, 20, replace=T), 30), "type"=rep("nike", 21))
+head(shoes)
+ggplot(shoes, aes(x=type, y=sizes), fill=sizes) + geom_point(shape = 21, color = "black", size = 2.3, alpha = 0.6, position = position_jitter(w = 0.03, h = 0)) + ylab("shoe sizes") + jamie.theme
+summary(shoes)
+shoes.z <- shoes %>% mutate(zsize = scale(shoes$sizes)) #generates a new dataframe with the z-scores for shoe sizes as a new variable you can sort on or filter on
+```
+
+## Eliminating outliers z>2
+We can just throw them out by filtering or applying a simple if then statement
+
+```{r}
+shoes.small <- shoes.z %>% filter(zsize <= 2)  #creates a new dataframe returning only shoe sizes z<2 in the original distribution
+summary(shoes.small)
+```
+
+# Transformations
+Need to be done on all the variables not just one. Let's look at the olfactory ratings. 
+
+```{r}
+ggplot(Lancaster, aes(x = Olfactory)) + geom_histogram(aes(y = ..density..), 
+    colour = "black", fill = "green", binwidth = 0.10) + xlab("Likert Rating") + 
+    ylab("Density") + jamie.theme + ggtitle("Olfactory Salience across English Words") + stat_function(fun = dnorm, args = list(mean = mean(Lancaster$Olfactory), sd= sd(Lancaster$Olfactory)), color="black", size=1)
+```
+
+## Natural log transform
+For illustrative purposes I have created a new dataframe with just smell and visual ratings on English words. This transform is good for positively skewed data -- long tail to right.
+There's a problem here in that we have some zero observations
+```{r}
+brief <- Lancaster %>% select(1,6,7)
+length(which(brief$Olfactory==0))  #counts the number of rows with a 0 observation
+brief$log <- log(brief$Olfactory + 1) #log is natural log, log10 is log base 10, this adds 1 so that there is never a 0 observation
+ggplot(brief, aes(x = log)) + geom_histogram(aes(y = ..density..), 
+    colour = "black", fill = "green", binwidth = 0.10) + 
+    ylab("Density") + jamie.theme + ggtitle("Log olfactory Salience") + stat_function(fun = dnorm, args = list(mean = mean(brief$log), sd= sd(brief$log)), color="black", size=1)
+
+
+```
+
+## Square root transformation
+You don't have to worry about zeros 
+```{r}
+brief$sqrt <- sqrt(brief$Olfactory)
+head(brief)
+ggplot(brief, aes(x = sqrt)) + geom_histogram(aes(y = ..density..), 
+    colour = "black", fill = "green", binwidth = 0.10) + 
+    ylab("Density") + jamie.theme + ggtitle("Sqrt olfactory Salience") + stat_function(fun = dnorm, args = list(mean = mean(brief$sqrt), sd= sd(brief$sqrt)), color="black", size=1)
+
+```
+
+## Reciprocal transformation
+Doesn't work when there are zeros in the denominator
+
+```{r}
+brief$recip <- 1/(brief$Olfactory+1)
+head(brief)
+ggplot(brief, aes(x = recip)) + geom_histogram(aes(y = ..density..), 
+    colour = "black", fill = "green", binwidth = 0.10) + 
+    ylab("Density") + jamie.theme + ggtitle("Reciprocal olfactory Salience") + stat_function(fun = dnorm, args = list(mean = mean(brief$recip), sd= sd(brief$recip)), color="black", size=1)
+```
+
+Questions: </br>
+1) Do you have to apply the transform uniformly across all variables </br>
+
+
+
